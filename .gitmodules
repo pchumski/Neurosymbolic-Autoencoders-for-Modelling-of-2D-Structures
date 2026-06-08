@@ -1,0 +1,3 @@
+[submodule "old_notes"]
+	path = old_notes
+	url = https://github.com/pchumski/magisterka-notatki.git
