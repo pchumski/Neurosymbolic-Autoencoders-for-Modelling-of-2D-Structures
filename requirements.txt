@@ -1,0 +1,17 @@
+# Główny framework Deep Learning
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Operacje numeryczne i algebra
+numpy>=1.24.0
+
+# Przetwarzanie obrazów (Dataset & Renderer)
+opencv-python>=4.8.0
+Pillow>=10.0.0
+
+# Wizualizacja danych i wykresy
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Analiza i redukcja wymiarowości (t-SNE)
+scikit-learn>=1.3.0
