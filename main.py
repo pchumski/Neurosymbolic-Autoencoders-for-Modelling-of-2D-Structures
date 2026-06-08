@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 
 # Importy autorskich modułów
-from utils.dataset import GeometricDataset, HardcoreUSGDataset
+from utils.dataset import GeometricDataset, BifurcationDataset12, HardcoreUSGDataset
 from models.networks import PhysicsAutoencoder, GridNeurosymbolicAutoencoder16RGB
 from engine.trainer import train_grid_model, train_3phase
 from utils.visualization import visualize_clean
@@ -13,6 +13,8 @@ def parse_args():
     
     parser.add_argument('--model-type', type=str, choices=['gru', 'grid'], required=True,
                         help='Wybór wariantu architektonicznego dekodera.')
+    parser.add_argument('--dataset-type', type=str, choices=['geometric', 'bifurcation'], default='geometric',
+                        help='Wybór generatora danych (proste węże vs złożone rozgałęzienia).')
     parser.add_argument('--grid-size', type=int, default=16, 
                         help='Rozmiar siatki przestrzennej (domyślnie 16).')
     parser.add_argument('--noise-severity', type=float, default=0.0, 
@@ -38,8 +40,12 @@ def main():
     print(f"--- Inicjalizacja środowiska na: {device.type.upper()} ---")
     
     # 2. Generowanie zbioru danych (w locie)
-    print(f"Generowanie {args.num_samples} próbek treningowych...")
-    base_dataset = GeometricDataset(num_samples=args.num_samples, img_size=128)
+    print(f"Generowanie {args.num_samples} próbek treningowych ({args.dataset_type})...")
+    
+    if args.dataset_type == 'geometric':
+        base_dataset = GeometricDataset(num_samples=args.num_samples, img_size=128)
+    elif args.dataset_type == 'bifurcation':
+        base_dataset = BifurcationDataset12(num_samples=args.num_samples, img_size=128)
     
     if args.noise_severity > 0.0:
         print(f"Nakładanie degradacji środowiskowych (Severity: {args.noise_severity})")
