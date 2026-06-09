@@ -1,4 +1,4 @@
-readme_content = """# 🧠 Neurosymbolic Autoencoder for 2D Sequential and Grid Structures
+# 🧠 Neurosymbolic Autoencoder for 2D Sequential and Grid Structures
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C.svg?logo=pytorch)](https://pytorch.org/)
