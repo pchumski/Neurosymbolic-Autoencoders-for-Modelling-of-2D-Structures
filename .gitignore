@@ -1,0 +1,20 @@
+# Środowiska wirtualne
+venv/
+env/
+
+# Cache Pythona
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pliki systemowe
+.DS_Store
+Thumbs.db
+
+# Wagi modeli i logi
+# *.pth
+# *.pt
+
+# Wygenerowane wykresy
+# *.png
+# *.pdf
