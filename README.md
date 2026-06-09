@@ -13,117 +13,140 @@
 
 > Official code repository for the Master's Thesis:
 > *"Neurosymbolic Autoencoders for Modelling of Sequential 2D Structures"*
-> Poznań University of Technology, Faculty of Computing and Telecommunications (2026)
+> Poznań University of Technology, Faculty of Computing and Telecommunications · 2026
 
 </div>
 
 ---
 
-## 🎯 What Does It Do?
+## 🧭 Overview
 
-The system takes a **heavily degraded image** of overlapping geometric structures and reconstructs it as a set of **clean, parametric ellipses** — each described by position, size, rotation, and colour. Unlike a standard autoencoder that outputs raw pixels, this model outputs *symbolic parameters* that a differentiable renderer then turns into an image. The entire pipeline is end-to-end trainable.
+The system takes a **heavily degraded image** (Gaussian noise, blur, pixel dropout) of 2D structures and reconstructs it as a set of clean, parametric **ellipses** — each described by position, size, rotation, and colour. Unlike a standard autoencoder that outputs raw pixels, this model outputs *symbolic parameters* that a differentiable renderer turns back into an image. The entire pipeline is end-to-end trainable via backpropagation.
 
-<p align="center">
-  <img src="master%20thesis/figures/grid_reconstruction_results.png" width="700" alt="Input → Target → Network Prediction"/>
-  <br/>
-  <em>Left: noisy input &nbsp;|&nbsp; Centre: clean target &nbsp;|&nbsp; Right: network prediction</em>
-</p>
-
-The approach sits at the intersection of three fields:
+This work sits at the intersection of three research fields:
 
 <p align="center">
-  <img src="master%20thesis/figures/venn_final_fixed_pos.png" width="420" alt="Venn diagram: Deep Learning × Computer Graphics × Symbolic AI"/>
+  <img src="master%20thesis/figures/venn_final_fixed_pos.png" width="420" alt="This work combines Deep Learning, Computer Graphics, and Symbolic AI"/>
 </p>
 
 ---
 
-## ✨ Key Features
+## ✨ Two Decoder Variants
 
-- **Two decoder architectures** — pick the one that suits your data:
-  - **Sequential GRU decoder** — generates ellipses one by one as a chain; solves the halting problem via a learned stop token.
-  - **16×16 Spatial Grid decoder** — each grid cell independently predicts an ellipse; handles arbitrary bifurcations, X-crossings, and branching topologies that trip up sequential models.
+The system was developed in two phases, producing two complementary architectures:
 
-- **Differentiable 2D Renderer** — a closed-form, analytical rendering engine based on sigmoid functions. Gradients flow directly from pixel space back to ellipse parameters, enabling end-to-end learning with no separate rendering step.
+### 🐍 Sequential GRU Decoder — for chain-like structures
 
-- **On-the-fly data generator** — the system is fully self-contained. It generates stochastic paths and bifurcations in RAM, then applies extreme visual degradations (Gaussian noise, blur, pixel dropout) that simulate real medical imagery such as ultrasound and angiography scans.
+The GRU decoder generates ellipses **one step at a time**, like drawing a snake. It uses a two-layer GRU with a teacher-forcing training schedule and a learned stop token to handle variable-length sequences.
 
-- **Orthogonal loss function** — prevents *Zero-Collapse* (the model predicting blank images) by separating topology/geometry learning (Dice coefficient) from photometric learning (MSE in RGB space).
+<p align="center">
+  <img src="master%20thesis/figures/reconstruction_comparison.png" width="680" alt="GRU model: target (left), reconstruction (centre), predicted ellipse contours (right)"/>
+  <br/>
+  <em>GRU decoder — target (left) · reconstructed image (centre) · predicted ellipse centres and contours (right) · object count correctly recovered in all cases</em>
+</p>
 
-- **100% Reproducibility** — a fixed random seed (42) is applied globally so that every training run produces identical loss curves and weight convergence.
+### 🔲 16×16 Grid Decoder — for complex topologies
+
+The Grid decoder replaces the time axis with a **spatial 16×16 grid**: each cell independently predicts one ellipse, enabling fully parallel, deterministic inference. This architecture was designed specifically to handle X-crossings and T/Y-bifurcations — topologies that cause recurrent models to loop or stop early.
+
+<p align="center">
+  <img src="master%20thesis/figures/grid_reconstruction_results.png" width="680" alt="Grid decoder: noisy input, clean target, network prediction"/>
+  <br/>
+  <em>Grid decoder on the bifurcation dataset — noisy input (left) · clean target mask (centre) · network prediction (right)</em>
+</p>
+
+<p align="center">
+  <img src="master%20thesis/figures/grid_reconstruction_results2.png" width="680" alt="Grid decoder: more examples including X-crossings"/>
+  <br/>
+  <em>More examples — including challenging X-crossings (row 1) and multi-segment scenes</em>
+</p>
 
 ---
 
 ## 🏗️ Architecture
 
+Both decoders share the same CNN encoder but differ in their reasoning module and loss function.
+
 ```
 Input Image (128×128×3)
         │
         ▼
- ┌─────────────┐
- │  CNN Encoder │  4× Conv2d → Flatten → Linear → Tanh
- │  (Shared)   │  Output: latent context vector C (128-dim)
- └──────┬──────┘
+ ┌─────────────────────────────────────┐
+ │  CNN Encoder (shared)               │
+ │  4× Conv2d(stride=2) → MLP → Tanh  │
+ └──────┬──────────────────────────────┘
         │
-   ┌────┴────┐
-   │         │
-   ▼         ▼
- GRU       Grid (16×16)
- Decoder   Decoder
-   │         │
-   └────┬────┘
-        │  Sequence of ellipse parameter vectors [x, y, rx, ry, θ, R, G, B, α]
-        ▼
- ┌─────────────────────┐
- │  Differentiable 2D  │  Sigmoid-based analytical renderer
- │  Renderer           │  Pixel grid → composited RGB image
- └─────────────────────┘
-        │
-        ▼
- Reconstructed Image (128×128×3)
+   ┌────┴──────────────────────┐
+   │                           │
+   ▼                           ▼
+Flat vector C (128-dim)    Spatial tensor (S×S×D)
+        │                           │
+   GRU Decoder                 Grid Decoder
+   (sequential)                (parallel, 16×16)
+        │                           │
+        └─────────────┬─────────────┘
+                      │
+              Ellipse parameters
+         [x, y, rx, ry, θ, R, G, B, α]
+                      │
+                      ▼
+         ┌────────────────────────┐
+         │  Differentiable 2D     │
+         │  Renderer (sigmoid)    │
+         └────────────┬───────────┘
+                      │
+             Reconstructed image
+              (128×128×3)
 ```
 
-### Ellipse parameter vector (9 values per primitive)
+### Ellipse parameter vector — 9 values per primitive
 
-| Index | Parameter | Range | Description |
-|-------|-----------|-------|-------------|
-| 0 | `cx` | [0, 1] | Centre X |
-| 1 | `cy` | [0, 1] | Centre Y |
-| 2 | `rx` | [0, 1] | Radius X (semi-axis) |
-| 3 | `ry` | [0, 1] | Radius Y (semi-axis) |
-| 4 | `θ`  | [0, 1] → [0, π] | Rotation angle |
-| 5 | `R`  | [0, 1] | Red channel |
-| 6 | `G`  | [0, 1] | Green channel |
-| 7 | `B`  | [0, 1] | Blue channel |
-| 8 | `α`  | [0, 1] | Existence probability (stop signal) |
+| Index | Parameter | Range | Meaning |
+|-------|-----------|-------|---------|
+| 0, 1 | `cx`, `cy` | [0, 1] | Ellipse centre (normalised) |
+| 2, 3 | `rx`, `ry` | [0, 1] | Semi-axes (scaled by learnable `Srx`, `Sry` in Grid) |
+| 4 | `θ` | [0, π] | Rotation angle |
+| 5–7 | `R`, `G`, `B` | [0, 1] | Colour |
+| 8 | `α` | [0, 1] | Existence probability / stop signal |
+
+### Differentiable renderer
+
+Classical rasterisation is discrete and blocks gradient flow. The renderer approximates the hard ellipse boundary with a sigmoid function, enabling end-to-end optimisation:
+
+```
+α(x,y) = σ((1 − d(x,y)) · s)    where d(x,y) = (x_rot/rx)² + (y_rot/ry)²
+```
+
+Pixels accumulate colour via alpha-blending over all primitives in the sequence.
 
 ---
 
 ## 📊 Datasets
 
-Three procedurally generated datasets — no external data needed.
+All datasets are generated procedurally at runtime — no external data required.
 
-| Dataset | Model | Description |
-|---------|-------|-------------|
-| `geometric` | GRU | Sequential snake-like paths of tangent ellipses; 5 complexity levels |
-| `bifurcation` | Grid | Intersecting line segments with X-crossings and T-junctions |
-| `HardcoreUSG` | Both | Any base dataset wrapped with Gaussian noise + blur + dropout |
+| Class | Used with | Description |
+|-------|-----------|-------------|
+| `GeometricDataset` | GRU | Snake-like chains of tangent ellipses; 5 curriculum complexity levels |
+| `BifurcationDataset12` | Grid | Randomly intersecting line segments with X and T/Y junctions |
+| `HardcoreUSGDataset` | Both | Wraps any base dataset with Gaussian noise + blur + pixel dropout |
 
 <p align="center">
-  <img src="master%20thesis/figures/dataset_capabilities.png" width="700" alt="Five levels of dataset complexity for the GRU model"/>
+  <img src="master%20thesis/figures/dataset_capabilities.png" width="700" alt="Five complexity levels of the GeometricDataset (GRU training)"/>
   <br/>
-  <em>GeometricDataset — five complexity levels (A→E) used during GRU training</em>
+  <em>GeometricDataset — five curriculum levels (A→E) used for GRU training, ranging from simple baseline to chaotic multi-overlap</em>
 </p>
 
 <p align="center">
-  <img src="master%20thesis/figures/dataset_complex_topologies.png" width="600" alt="BifurcationDataset — line crossings"/>
+  <img src="master%20thesis/figures/dataset_complex_topologies.png" width="600" alt="BifurcationDataset — clean reference masks"/>
   <br/>
-  <em>BifurcationDataset — intersecting structures for the Grid decoder</em>
+  <em>BifurcationDataset — clean reference masks (ground truth). The model receives a noise-degraded version of these as input</em>
 </p>
 
 <p align="center">
-  <img src="master%20thesis/figures/robustness_samples.png" width="700" alt="HardcoreUSGDataset — noise degradations"/>
+  <img src="master%20thesis/figures/robustness_samples.png" width="700" alt="HardcoreUSGDataset — three degradation types at severity 0.7"/>
   <br/>
-  <em>HardcoreUSGDataset — three degradation types applied at severity 0.7</em>
+  <em>HardcoreUSGDataset — original (row 1), Gaussian noise (row 2), blur (row 3), pixel dropout (row 4) — all at severity 0.7</em>
 </p>
 
 ---
@@ -133,26 +156,26 @@ Three procedurally generated datasets — no external data needed.
 ```
 Neurosymbolic-Autoencoders-for-Modelling-of-2D-Structures/
 │
-├── main.py                  # CLI entry point (argparse)
-├── requirements.txt         # Python dependencies
+├── main.py                   # CLI entry point (argparse)
+├── requirements.txt          # Python dependencies
 │
 ├── core/
-│   ├── renderer.py          # Differentiable 2D renderer (sigmoid-based)
-│   └── losses.py            # Composite loss: Dice + MSE + BCE
+│   ├── renderer.py           # Differentiable 2D renderer (sigmoid-based)
+│   └── losses.py             # Loss functions: Dice (topology) + MSE (colour) + BCE (stop)
 │
 ├── engine/
-│   └── trainer.py           # Training loops — standard + 3-phase (GRU)
+│   └── trainer.py            # Training loops — standard (Grid) + 3-phase teacher forcing (GRU)
 │
 ├── models/
-│   └── networks.py          # CNN encoder, GRU decoder, Grid decoder
+│   └── networks.py           # CNN encoder, GRU decoder, Grid decoder
 │
 ├── utils/
-│   ├── dataset.py           # Data generators (Geometric, Bifurcation, HardcoreUSG)
-│   └── visualization.py     # Reconstruction previews & t-SNE plots
+│   ├── dataset.py            # Data generators (Geometric, Bifurcation, HardcoreUSG)
+│   └── visualization.py      # Reconstruction previews & t-SNE analysis
 │
 └── master thesis/
-    ├── main.pdf             # Full thesis document
-    └── figures/             # All result figures used in thesis and README
+    ├── main.pdf              # Full thesis (58 pages)
+    └── figures/              # All result figures
 ```
 
 ---
@@ -160,15 +183,11 @@ Neurosymbolic-Autoencoders-for-Modelling-of-2D-Structures/
 ## ⚙️ Requirements
 
 - Python 3.10+
-- CUDA-capable GPU recommended (CPU works but is slow for training)
-
-Install all dependencies:
+- CUDA-capable GPU recommended (CPU works but is slow)
 
 ```bash
 pip install -r requirements.txt
 ```
-
-Contents of `requirements.txt`:
 
 ```
 torch>=2.0.0
@@ -185,31 +204,30 @@ scikit-learn>=1.3.0
 
 ## 🚀 Quick Start
 
-### Clone
-
 ```bash
 git clone https://github.com/pchumski/Neurosymbolic-Autoencoders-for-Modelling-of-2D-Structures.git
 cd Neurosymbolic-Autoencoders-for-Modelling-of-2D-Structures
 pip install -r requirements.txt
 ```
 
-### Train — Grid decoder (recommended starting point)
-
+**Train the Grid decoder** (recommended starting point — no teacher forcing needed):
 ```bash
 python main.py --model-type grid --dataset-type bifurcation --epochs 80
 ```
 
-### Train — GRU decoder on simple paths
-
+**Train the GRU decoder** on sequential snake data:
 ```bash
 python main.py --model-type gru --dataset-type geometric --epochs 60
 ```
 
-### Train with noise (simulate ultrasound data)
-
+**Add noise** to simulate degraded sensor data:
 ```bash
 python main.py --model-type grid --dataset-type bifurcation --noise-severity 0.7 --epochs 100
 ```
+
+After training, two files are saved automatically:
+- `neurosymbolic_{model_type}_model.pth` — trained weights
+- `test_results_{model_type}.png` — reconstruction preview
 
 ---
 
@@ -217,48 +235,57 @@ python main.py --model-type grid --dataset-type bifurcation --noise-severity 0.7
 
 | Argument | Choices / Default | Description |
 |---|---|---|
-| `--model-type` | `gru` \| `grid` | **Required.** Decoder architecture |
-| `--dataset-type` | `geometric` \| `bifurcation` · `geometric` | Training data generator |
-| `--noise-severity` | `0.0–1.0` · `0.0` | Visual degradation intensity (0 = off) |
-| `--epochs` | int · `60` | Total training epochs |
+| `--model-type` | `gru` \| `grid` · **required** | Decoder architecture |
+| `--dataset-type` | `geometric` \| `bifurcation` · `geometric` | Data generator |
+| `--noise-severity` | `0.0–1.0` · `0.0` | Degradation intensity (0 = clean) |
+| `--epochs` | int · `60` | Training epochs |
 | `--batch-size` | int · `32` | Batch size |
-| `--lr` | float · `2e-4` | Learning rate |
+| `--lr` | float · `2e-4` | Learning rate (Adam) |
 | `--device` | `cpu` \| `cuda` · `cuda` | Hardware target |
-| `--num-samples` | int · `10000` | Number of generated training samples |
-| `--grid-size` | int · `16` | Spatial grid resolution (Grid decoder only) |
-
-After training, two files are saved automatically:
-
-- `neurosymbolic_{model_type}_model.pth` — trained weights
-- `test_results_{model_type}.png` — side-by-side reconstruction preview
+| `--num-samples` | int · `10000` | Generated training samples |
+| `--grid-size` | int · `16` | Grid resolution (Grid decoder only) |
 
 ---
 
 ## 📈 Results
 
-### Training curve
+### Training stability — gradient clipping
 
 <p align="center">
-  <img src="master%20thesis/figures/loss_history.png" width="500" alt="Training loss — converges within ~10 epochs"/>
+  <img src="master%20thesis/figures/loss_clipping.png" width="560" alt="Effect of gradient clipping on training stability"/>
   <br/>
-  <em>Loss converges within the first 10 epochs and stabilises cleanly</em>
+  <em>Gradient clipping (blue) vs without (red dashed) — without clipping, the GRU training explodes repeatedly after epoch 20</em>
 </p>
 
-### Grid decoder — reconstruction quality
+### Training convergence (Grid decoder)
 
 <p align="center">
-  <img src="master%20thesis/figures/grid_reconstruction_results2.png" width="700" alt="More reconstruction examples including X-crossings"/>
+  <img src="master%20thesis/figures/loss_history.png" width="500" alt="Grid model training loss — converges within ~10 epochs"/>
   <br/>
-  <em>The Grid decoder successfully handles X-crossings (row 1) and single-segment cases (rows 2, 4)</em>
+  <em>Grid model loss curve — sharp convergence in the first 10 epochs, stable plateau thereafter</em>
 </p>
 
-### Latent space — t-SNE (GRU model)
+### Latent space organisation — t-SNE (GRU model)
 
 <p align="center">
-  <img src="master%20thesis/figures/tsne_latent_space_gru.png" width="580" alt="t-SNE projection coloured by object count"/>
+  <img src="master%20thesis/figures/tsne_latent_space_gru.png" width="580" alt="t-SNE of the 128-dim GRU latent space, coloured by object count"/>
   <br/>
-  <em>t-SNE of the 128-dim latent space coloured by number of objects — the encoder organises complexity into a smooth gradient</em>
+  <em>t-SNE projection of the GRU latent space coloured by number of objects — the encoder organises scene complexity into a smooth, continuous gradient without explicit supervision</em>
 </p>
+
+---
+
+## ⚠️ Limitations
+
+The system was trained entirely on **synthetic data**. When applied zero-shot to real medical images (retinal angiography), the model fails due to domain shift — outputting structurally incorrect reconstructions:
+
+<p align="center">
+  <img src="master%20thesis/figures/drive_zero_shot_failure.png" width="680" alt="Zero-shot failure on real angiography images"/>
+  <br/>
+  <em>Zero-shot transfer to real retinal angiograms — the model cannot bridge the gap from synthetic to real-world data without fine-tuning</em>
+</p>
+
+Bridging this domain gap through transfer learning or domain adaptation is the primary direction for future work.
 
 ---
 
@@ -266,7 +293,7 @@ After training, two files are saved automatically:
 
 | Resource | Link |
 |---|---|
-| 📖 Full Master's Thesis (PDF) | [master thesis/main.pdf](master%20thesis/main.pdf) |
+| 📖 Full Master's Thesis (PDF, 58 pages) | [master thesis/main.pdf](master%20thesis/main.pdf) |
 | 🧩 PyTorch | [pytorch.org](https://pytorch.org/) |
 
 ---
