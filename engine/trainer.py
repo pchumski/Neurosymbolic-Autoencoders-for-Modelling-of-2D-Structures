@@ -16,7 +16,9 @@ def train_grid_model(model, train_loader, epochs=60, lr=2e-4, device='cuda'):
     model.train()
     
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    criterion = OrthogonalImageLoss(dice_weight=1.0, mse_weight=1.0)
+    
+    # λ_Dice=0.8 wymusza priorytet nauki topologii, λ_MSE=0.2 dopasowuje kolor
+    criterion = OrthogonalImageLoss(dice_weight=0.8, mse_weight=0.2)
     
     print(f"Rozpoczynam trening dekodera siatkowego na urządzeniu: {device}")
     
@@ -63,31 +65,27 @@ def train_grid_model(model, train_loader, epochs=60, lr=2e-4, device='cuda'):
 # ==========================================
 def train_3phase(model, train_loader, epochs_per_phase=20, lr=1e-3, device='cuda'):
     """
-    Trójfazowa pętla ucząca dla modelu sekwencyjnego (PhysicsAutoencoder).
-    Faza 1: Teacher Forcing = 1.0 (Pełne wsparcie)
-    Faza 2: Liniowe wygaszanie Teacher Forcing (1.0 -> 0.0)
-    Faza 3: Teacher Forcing = 0.0 (Samodzielna predykcja)
+    Pętla ucząca dla modelu sekwencyjnego (PhysicsAutoencoder).
+    Harmonogram wymuszania nauczyciela (Teacher Forcing) zgodny z równaniem 5.1 pracy:
+
+        ratio = max(0.1, 1.0 - epoch / 40.0)
+
+    TF spada liniowo od 1.0 do wartości minimalnej 0.1, osiągając minimum
+    około epoki 36. Od tej chwili model pracuje prawie w pełni samodzielnie.
     """
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = MaskedSequenceLoss(bce_weight=1.0, mse_weight=10.0)
     
     total_epochs = epochs_per_phase * 3
-    print(f"Rozpoczynam trening 3-fazowy modelu GRU ({total_epochs} epok)")
+    print(f"Rozpoczynam trening modelu GRU ({total_epochs} epok, harmonogram TF wg równania 5.1)")
 
     for epoch in range(total_epochs):
         model.train()
         total_loss = 0.0
         
-        # Obliczanie obecnego poziomu Teacher Forcing
-        if epoch < epochs_per_phase:
-            tf_ratio = 1.0  # Faza 1
-        elif epoch < 2 * epochs_per_phase:
-            # Faza 2: Wygaszanie
-            decay_step = epoch - epochs_per_phase
-            tf_ratio = 1.0 - (decay_step / epochs_per_phase)
-        else:
-            tf_ratio = 0.0  # Faza 3
+        # Harmonogram wygaszania Teacher Forcing – równanie 5.1 pracy
+        tf_ratio = max(0.1, 1.0 - epoch / 40.0)
             
         for batch_idx, (imgs, target_params) in enumerate(train_loader):
             imgs = imgs.to(device)
@@ -108,9 +106,6 @@ def train_3phase(model, train_loader, epochs_per_phase=20, lr=1e-3, device='cuda
             total_loss += loss.item()
             
         avg_loss = total_loss / len(train_loader)
-        
-        # Wyświetlanie informacji o fazie
-        phase = 1 if epoch < epochs_per_phase else (2 if epoch < 2*epochs_per_phase else 3)
-        print(f"Epoka [{epoch+1}/{total_epochs}] | Faza: {phase} | TF Ratio: {tf_ratio:.2f} | Loss: {avg_loss:.4f}")
+        print(f"Epoka [{epoch+1}/{total_epochs}] | TF Ratio: {tf_ratio:.2f} | Loss: {avg_loss:.4f}")
 
     return model

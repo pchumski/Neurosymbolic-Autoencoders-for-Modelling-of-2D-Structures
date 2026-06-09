@@ -29,7 +29,7 @@ def parse_args():
                         help='Wybór generatora danych (proste węże vs złożone rozgałęzienia).')
     parser.add_argument('--grid-size', type=int, default=16, 
                         help='Rozmiar siatki przestrzennej (domyślnie 16).')
-    parser.add_argument('--noise-severity', type=float, default=0.0, 
+    parser.add_argument('--noise-severity', type=float, default=0.0, metavar='SEVERITY',
                         help='Poziom degradacji obrazu wejściowego (0.0 - 1.0).')
     parser.add_argument('--epochs', type=int, default=60, 
                         help='Liczba epok treningowych.')
