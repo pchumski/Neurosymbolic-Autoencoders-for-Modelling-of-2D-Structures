@@ -39,3 +39,5 @@ Projekt stanowi implementację innowacyjnego systemu sztucznej inteligencji łą
  ┣ 📜 main.py          # Główny punkt wejścia CLI z obsługą argparse
  ┣ 📜 requirements.txt # Zależności środowiska uruchomieniowego
  ┗ 📜 README.md
+```
+Last update: 06.2026
