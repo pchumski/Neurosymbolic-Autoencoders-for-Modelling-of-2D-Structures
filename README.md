@@ -301,6 +301,6 @@ Bridging this domain gap through transfer learning or domain adaptation is the p
 <div align="center">
 
 *Master's Thesis — Poznań University of Technology*
-**Author: Paweł Chumski · 2026**
+**Author: inż. Paweł Chumski · 2026**
 
 </div>
